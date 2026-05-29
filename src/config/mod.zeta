@@ -1,0 +1,240 @@
+// Auto-converted from /tmp/df-bincode-1.3.3/bincode-1.3.3/src/config/mod.rs
+
+use de::read::BincodeRead;
+use error::Result;
+use serde;
+use std::io::{ Read, Write };
+use std::marker::PhantomData;
+pub(crate) use self::endian::BincodeByteOrder;
+pub(crate) use self::int::IntEncoding;
+pub(crate) use self::internal::*;
+pub(crate) use self::limit::SizeLimit;
+pub(crate) use self::trailing::TrailingBytes;
+pub use self::endian::{ BigEndian, LittleEndian, NativeEndian };
+pub use self::int::{ FixintEncoding, VarintEncoding };
+pub use self::legacy::*;
+pub use self::limit::{ Bounded, Infinite };
+pub use self::trailing::{ AllowTrailing, RejectTrailing };
+mod endian;
+mod int;
+mod legacy;
+mod limit;
+mod trailing;
+/// The default options for bincode serialization/deserialization.
+/// 
+/// ### Defaults
+/// By default bincode will use little-endian encoding for multi-byte integers, and will not
+/// limit the number of serialized/deserialized bytes.
+/// 
+/// ### Configuring `DefaultOptions`
+/// 
+/// `DefaultOptions` implements the [Options] trait, which means it exposes functions to change the behavior of bincode.
+/// 
+/// For example, if you wanted to limit the bincode deserializer to 1 kilobyte of user input:
+/// 
+/// ```rust
+/// use bincode::Options;
+/// let my_options = bincode::DefaultOptions::new().with_limit(1024);
+/// ```
+/// 
+/// ### DefaultOptions struct vs. functions
+/// 
+/// The default configuration used by this struct is not the same as that used by the bincode
+/// helper functions in the root of this crate. See the
+/// [config](index.html#options-struct-vs-bincode-functions) module for more details
+#[derive(Copy, Clone)]
+pub struct DefaultOptions {
+ (Infinite),
+}
+
+impl DefaultOptions {
+ pub fn new() -> DefaultOptions {
+ DefaultOptions(Infinite)
+ }
+ 
+}
+
+impl Default for DefaultOptions {
+ fn default() -> Self {
+ Self::new()
+ }
+ 
+}
+
+impl InternalOptions for DefaultOptions {
+ type Limit = Infinite;
+ type Endian = LittleEndian;
+ type IntEncoding = VarintEncoding;
+ type Trailing = RejectTrailing;
+ fn limit(&mut self) -> &mut Infinite {
+ &mut self.0
+ }
+ 
+}
+
+/// A configuration builder trait whose options Bincode will use
+/// while serializing and deserializing.
+/// 
+/// ### Options
+/// Endianness: The endianness with which multi-byte integers will be read/written. *default: little endian*
+/// 
+/// Limit: The maximum number of bytes that will be read/written in a bincode serialize/deserialize. *default: unlimited*
+/// 
+/// Int Encoding: The encoding used for numbers, enum discriminants, and lengths. *default: varint*
+/// 
+/// Trailing Behavior: The behavior when there are trailing bytes left over in a slice after deserialization. *default: reject*
+/// 
+/// ### Byte Limit Details
+/// The purpose of byte-limiting is to prevent Denial-Of-Service attacks whereby malicious attackers get bincode
+/// deserialization to crash your process by allocating too much memory or keeping a connection open for too long.
+/// 
+/// When a byte limit is set, bincode will return `Err` on any deserialization that goes over the limit, or any
+/// serialization that goes over the limit.
+pub trait Options {
+ fn with_no_limit(self) -> WithOtherLimit<Self, Infinite>;
+ fn with_limit(self, limit: u64) -> WithOtherLimit<Self, Bounded>;
+ fn with_little_endian(self) -> WithOtherEndian<Self, LittleEndian>;
+ fn with_big_endian(self) -> WithOtherEndian<Self, BigEndian>;
+ fn with_native_endian(self) -> WithOtherEndian<Self, NativeEndian>;
+ fn with_varint_encoding(self) -> WithOtherIntEncoding<Self, VarintEncoding>;
+ fn with_fixint_encoding(self) -> WithOtherIntEncoding<Self, FixintEncoding>;
+ fn reject_trailing_bytes(self) -> WithOtherTrailing<Self, RejectTrailing>;
+ fn allow_trailing_bytes(self) -> WithOtherTrailing<Self, AllowTrailing>;
+ fn serialize<S: Sized + serde::Serialize>(self, t: &S) -> Result<Vec<u8>>;
+ fn serialized_size<T: Sized + serde::Serialize>(self, t: &T) -> Result<u64>;
+ fn serialize_into<W: Write, T: Sized + serde::Serialize>(self, w: W, t: &T) -> Result<()>;
+ fn deserialize<a, T: serde::Deserialize<a>>(self, bytes: &[u8]) -> Result<T>;
+ fn deserialize_in_place<a, R, T>(self, reader: R, place: &mut T) -> Result<()> where R: BincodeRead<a>, T: serde::de::Deserialize<a>;
+ fn deserialize_seed<a, T: serde::de::DeserializeSeed<a>>(self, seed: T, bytes: &[u8]) -> Result<T::Value>;
+ fn deserialize_from<R: Read, T: serde::de::DeserializeOwned>(self, reader: R) -> Result<T>;
+ fn deserialize_from_seed<a, R: Read, T: serde::de::DeserializeSeed<a>>(self, seed: T, reader: R) -> Result<T::Value>;
+ fn deserialize_from_custom<a, R: BincodeRead<a>, T: serde::de::DeserializeOwned>(self, reader: R) -> Result<T>;
+ fn deserialize_from_custom_seed<a, R: BincodeRead<a>, T: serde::de::DeserializeSeed<a>>(self, seed: T, reader: R) -> Result<T::Value>
+}
+
+impl<T: InternalOptions> Options for T {
+}
+
+/// A configuration struct with a user-specified byte limit
+#[derive(Clone, Copy)]
+pub struct WithOtherLimit<O: Options, L: SizeLimit> {
+ _options: O,
+ new_limit: L,
+}
+
+/// A configuration struct with a user-specified endian order
+#[derive(Clone, Copy)]
+pub struct WithOtherEndian<O: Options, E: BincodeByteOrder> {
+ options: O,
+ _endian: PhantomData<E>,
+}
+
+/// A configuration struct with a user-specified length encoding
+#[derive(Clone, Copy)]
+pub struct WithOtherIntEncoding<O: Options, I: IntEncoding> {
+ options: O,
+ _length: PhantomData<I>,
+}
+
+/// A configuration struct with a user-specified trailing bytes behavior.
+#[derive(Clone, Copy)]
+pub struct WithOtherTrailing<O: Options, T: TrailingBytes> {
+ options: O,
+ _trailing: PhantomData<T>,
+}
+
+impl<O: Options, L: SizeLimit> WithOtherLimit<O, L> {
+ fn new(options: O, limit: L) -> WithOtherLimit<O, L> {
+ WithOtherLimit { _options: options, new_limit: limit }
+ }
+ 
+}
+
+impl<O: Options, E: BincodeByteOrder> WithOtherEndian<O, E> {
+ fn new(options: O) -> WithOtherEndian<O, E> {
+ WithOtherEndian { options, _endian: PhantomData }
+ }
+ 
+}
+
+impl<O: Options, I: IntEncoding> WithOtherIntEncoding<O, I> {
+ fn new(options: O) -> WithOtherIntEncoding<O, I> {
+ WithOtherIntEncoding { options, _length: PhantomData }
+ }
+ 
+}
+
+impl<O: Options, T: TrailingBytes> WithOtherTrailing<O, T> {
+ fn new(options: O) -> WithOtherTrailing<O, T> {
+ WithOtherTrailing { options, _trailing: PhantomData }
+ }
+ 
+}
+
+impl<O: Options, E: BincodeByteOrder + static> InternalOptions for WithOtherEndian<O, E> {
+ type Limit = O::Limit;
+ type Endian = E;
+ type IntEncoding = O::IntEncoding;
+ type Trailing = O::Trailing;
+ fn limit(&mut self) -> &mut O::Limit {
+ self.options.limit()
+ }
+ 
+}
+
+impl<O: Options, L: SizeLimit + static> InternalOptions for WithOtherLimit<O, L> {
+ type Limit = L;
+ type Endian = O::Endian;
+ type IntEncoding = O::IntEncoding;
+ type Trailing = O::Trailing;
+ fn limit(&mut self) -> &mut L {
+ &mut self.new_limit
+ }
+ 
+}
+
+impl<O: Options, I: IntEncoding + static> InternalOptions for WithOtherIntEncoding<O, I> {
+ type Limit = O::Limit;
+ type Endian = O::Endian;
+ type IntEncoding = I;
+ type Trailing = O::Trailing;
+ fn limit(&mut self) -> &mut O::Limit {
+ self.options.limit()
+ }
+ 
+}
+
+impl<O: Options, T: TrailingBytes + static> InternalOptions for WithOtherTrailing<O, T> {
+ type Limit = O::Limit;
+ type Endian = O::Endian;
+ type IntEncoding = O::IntEncoding;
+ type Trailing = T;
+ fn limit(&mut self) -> &mut O::Limit {
+ self.options.limit()
+ }
+ 
+}
+
+mod internal {
+ use super::*;
+ pub trait InternalOptions {
+ type Limit;
+ type Endian;
+ type IntEncoding;
+ type Trailing;
+ fn limit(&mut self) -> &mut Self::Limit;
+ }
+ 
+ impl<a, O: InternalOptions> InternalOptions for &mut O {
+ type Limit = O::Limit;
+ type Endian = O::Endian;
+ type IntEncoding = O::IntEncoding;
+ type Trailing = O::Trailing;
+ fn limit(&mut self) -> &mut Self::Limit {
+ (*self).limit()
+ }
+ 
+ }
+ 
+}
+

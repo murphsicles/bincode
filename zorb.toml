@@ -1,0 +1,9 @@
+[package]
+name = "@encoding/bincode"
+version = "1.0.0"
+description = "Zeta port of bincode v1.3.3"
+authors = ["The Zeta Foundation"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/murphsicles/bincode"
+keywords = ["encoding", "zeta", "bincode"]
+categories = ["encoding"]
